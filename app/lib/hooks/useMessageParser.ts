@@ -1,70 +1,74 @@
-import type { Message } from 'ai';
-import { useCallback, useState } from 'react';
-import { StreamingMessageParser } from '~/lib/runtime/message-parser';
+import { useCallback, useRef } from 'react';
+import { useStore } from '@nanostores/react';
+import { StreamingMessageParser, type ActionCallbackData, type ArtifactCallbackData } from '~/lib/runtime/message-parser';
 import { workbenchStore } from '~/lib/stores/workbench';
-import { createScopedLogger } from '~/utils/logger';
 
-const logger = createScopedLogger('useMessageParser');
+export function useMessageParser(isLoading: boolean) {
+  const parser = useRef<StreamingMessageParser>();
+  const showWorkbench = useStore(workbenchStore.showWorkbench);
 
-const messageParser = new StreamingMessageParser({
-  callbacks: {
-    onArtifactOpen: (data) => {
-      logger.trace('onArtifactOpen', data);
-
-      workbenchStore.showWorkbench.set(true);
-      workbenchStore.addArtifact(data);
-    },
-    onArtifactClose: (data) => {
-      logger.trace('onArtifactClose');
-
-      workbenchStore.updateArtifact(data, { closed: true });
-    },
-    onActionOpen: (data) => {
-      logger.trace('onActionOpen', data.action);
-
-      // we only add shell actions when when the close tag got parsed because only then we have the content
-      if (data.action.type !== 'shell') {
-        workbenchStore.addAction(data);
+  const callbacks = {
+    onArtifactOpen: (data: ArtifactCallbackData) => {
+      if (!showWorkbench) {
+        workbenchStore.setShowWorkbench(true);
       }
+      workbenchStore.addArtifact({
+        ...data,
+        title: data.type,
+        runner: { actions: [] }
+      });
     },
-    onActionClose: (data) => {
-      logger.trace('onActionClose', data.action);
 
-      if (data.action.type === 'shell') {
-        workbenchStore.addAction(data);
+    onArtifactClose: (data: ArtifactCallbackData) => {
+      workbenchStore.removeArtifact({
+        ...data,
+        title: data.type,
+        runner: { actions: [] }
+      });
+    },
+
+    onActionOpen: (data: ActionCallbackData) => {
+      if (!showWorkbench) {
+        workbenchStore.setShowWorkbench(true);
       }
-
-      workbenchStore.runAction(data);
+      workbenchStore.addAction({
+        ...data,
+        actionId: `${data.type}-${Date.now()}`,
+        executed: false
+      });
     },
-    onActionStream: (data) => {
-      logger.trace('onActionStream', data.action);
-      workbenchStore.runAction(data, true);
+
+    onActionClose: (data: ActionCallbackData) => {
+      workbenchStore.removeAction({
+        ...data,
+        actionId: `${data.type}-${Date.now()}`,
+        executed: false
+      });
     },
-  },
-});
 
-export function useMessageParser() {
-  const [parsedMessages, setParsedMessages] = useState<{ [key: number]: string }>({});
+    onActionStream: (data: { content: string }) => {
+      workbenchStore.updateLastAction(data.content);
+    },
+  };
 
-  const parseMessages = useCallback((messages: Message[], isLoading: boolean) => {
-    let reset = false;
-
-    if (import.meta.env.DEV && !isLoading) {
-      reset = true;
-      messageParser.reset();
+  const parse = useCallback((text: string) => {
+    if (!parser.current) {
+      parser.current = new StreamingMessageParser(callbacks);
     }
 
-    for (const [index, message] of messages.entries()) {
-      if (message.role === 'assistant') {
-        const newParsedContent = messageParser.parse(message.id, message.content);
+    if (import.meta.env.DEV && !isLoading) {
+      console.log('Parsing message:', text);
+    }
 
-        setParsedMessages((prevParsed) => ({
-          ...prevParsed,
-          [index]: !reset ? (prevParsed[index] || '') + newParsedContent : newParsedContent,
-        }));
-      }
+    parser.current.feed(text);
+  }, [isLoading, showWorkbench]);
+
+  const end = useCallback(() => {
+    if (parser.current) {
+      parser.current.end();
+      parser.current = undefined;
     }
   }, []);
 
-  return { parsedMessages, parseMessages };
+  return { parse, end };
 }

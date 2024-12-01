@@ -1,112 +1,51 @@
-export type DebugLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
+type DebugLevel = 'debug' | 'info' | 'warn' | 'error';
 
-type LoggerFunction = (...messages: any[]) => void;
+const isDev = process.env.NODE_ENV === 'development';
+const currentLevel: DebugLevel = isDev ? 'debug' : 'info';
 
-interface Logger {
-  trace: LoggerFunction;
-  debug: LoggerFunction;
-  info: LoggerFunction;
-  warn: LoggerFunction;
-  error: LoggerFunction;
-  setLevel: (level: DebugLevel) => void;
+const LOG_LEVELS = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+} as const;
+
+function shouldLog(level: DebugLevel): boolean {
+  return LOG_LEVELS[level] >= LOG_LEVELS[currentLevel];
 }
 
-let currentLevel: DebugLevel = import.meta.env.VITE_LOG_LEVEL ?? import.meta.env.DEV ? 'debug' : 'info';
+function formatMessage(level: DebugLevel, scope: string, message: string, data?: unknown): string {
+  const timestamp = new Date().toISOString();
+  const formattedData = data ? JSON.stringify(data, null, 2) : '';
+  return `[${level.toUpperCase()}][${scope}] ${timestamp} - ${message}${formattedData ? '\n' + formattedData : ''}`;
+}
 
-const isWorker = 'HTMLRewriter' in globalThis;
-const supportsColor = !isWorker;
-
-export const logger: Logger = {
-  trace: (...messages: any[]) => log('trace', undefined, messages),
-  debug: (...messages: any[]) => log('debug', undefined, messages),
-  info: (...messages: any[]) => log('info', undefined, messages),
-  warn: (...messages: any[]) => log('warn', undefined, messages),
-  error: (...messages: any[]) => log('error', undefined, messages),
-  setLevel,
-};
-
-export function createScopedLogger(scope: string): Logger {
+export function createScopedLogger(scope: string) {
   return {
-    trace: (...messages: any[]) => log('trace', scope, messages),
-    debug: (...messages: any[]) => log('debug', scope, messages),
-    info: (...messages: any[]) => log('info', scope, messages),
-    warn: (...messages: any[]) => log('warn', scope, messages),
-    error: (...messages: any[]) => log('error', scope, messages),
-    setLevel,
+    debug(message: string, data?: unknown) {
+      if (shouldLog('debug')) {
+        console.debug(formatMessage('debug', scope, message, data));
+      }
+    },
+
+    info(message: string, data?: unknown) {
+      if (shouldLog('info')) {
+        console.info(formatMessage('info', scope, message, data));
+      }
+    },
+
+    warn(message: string, data?: unknown) {
+      if (shouldLog('warn')) {
+        console.warn(formatMessage('warn', scope, message, data));
+      }
+    },
+
+    error(message: string, error?: unknown) {
+      if (shouldLog('error')) {
+        console.error(formatMessage('error', scope, message, error));
+      }
+    },
   };
 }
 
-function setLevel(level: DebugLevel) {
-  if ((level === 'trace' || level === 'debug') && import.meta.env.PROD) {
-    return;
-  }
-
-  currentLevel = level;
-}
-
-function log(level: DebugLevel, scope: string | undefined, messages: any[]) {
-  const levelOrder: DebugLevel[] = ['trace', 'debug', 'info', 'warn', 'error'];
-
-  if (levelOrder.indexOf(level) < levelOrder.indexOf(currentLevel)) {
-    return;
-  }
-
-  const allMessages = messages.reduce((acc, current) => {
-    if (acc.endsWith('\n')) {
-      return acc + current;
-    }
-
-    if (!acc) {
-      return current;
-    }
-
-    return `${acc} ${current}`;
-  }, '');
-
-  if (!supportsColor) {
-    console.log(`[${level.toUpperCase()}]`, allMessages);
-
-    return;
-  }
-
-  const labelBackgroundColor = getColorForLevel(level);
-  const labelTextColor = level === 'warn' ? 'black' : 'white';
-
-  const labelStyles = getLabelStyles(labelBackgroundColor, labelTextColor);
-  const scopeStyles = getLabelStyles('#77828D', 'white');
-
-  const styles = [labelStyles];
-
-  if (typeof scope === 'string') {
-    styles.push('', scopeStyles);
-  }
-
-  console.log(`%c${level.toUpperCase()}${scope ? `%c %c${scope}` : ''}`, ...styles, allMessages);
-}
-
-function getLabelStyles(color: string, textColor: string) {
-  return `background-color: ${color}; color: white; border: 4px solid ${color}; color: ${textColor};`;
-}
-
-function getColorForLevel(level: DebugLevel): string {
-  switch (level) {
-    case 'trace':
-    case 'debug': {
-      return '#77828D';
-    }
-    case 'info': {
-      return '#1389FD';
-    }
-    case 'warn': {
-      return '#FFDB6C';
-    }
-    case 'error': {
-      return '#EE4744';
-    }
-    default: {
-      return 'black';
-    }
-  }
-}
-
-export const renderLogger = createScopedLogger('Render');
+export const logger = createScopedLogger('app');

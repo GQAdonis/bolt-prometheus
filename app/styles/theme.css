@@ -1,0 +1,58 @@
+:root {
+  --bolt-background: #ffffff;
+  --bolt-foreground: #212529;
+  --bolt-border: #dee2e6;
+  --bolt-muted: #6c757d;
+  --bolt-danger: #dc3545;
+}
+
+.dark {
+  --bolt-background: #1a1a1a;
+  --bolt-foreground: #e5e5e5;
+  --bolt-border: #404040;
+  --bolt-muted: #a3a3a3;
+  --bolt-danger: #ef4444;
+}
+
+.bolt-elements-background {
+  background-color: var(--bolt-background);
+}
+
+.bolt-elements-background-depth-1 {
+  background-color: color-mix(in srgb, var(--bolt-background) 90%, var(--bolt-foreground) 10%);
+}
+
+.bolt-elements-background-depth-2 {
+  background-color: color-mix(in srgb, var(--bolt-background) 80%, var(--bolt-foreground) 20%);
+}
+
+.bolt-elements-border {
+  border-color: var(--bolt-border);
+}
+
+.bolt-elements-textPrimary {
+  color: var(--bolt-foreground);
+}
+
+.bolt-elements-textSecondary {
+  color: var(--bolt-muted);
+}
+
+.bolt-elements-danger {
+  background-color: var(--bolt-danger);
+  color: #ffffff;
+}
+
+.prose {
+  max-width: none !important;
+}
+
+body {
+  background-color: var(--bolt-background);
+  color: var(--bolt-foreground);
+  border-color: var(--bolt-border);
+}
+
+* {
+  border-color: var(--bolt-border);
+}

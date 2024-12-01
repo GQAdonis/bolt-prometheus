@@ -1,100 +1,60 @@
-import { type ActionFunctionArgs } from '@remix-run/cloudflare';
-import { StreamingTextResponse, parseStreamPart } from 'ai';
-import { streamText } from '~/lib/.server/llm/stream-text';
-import { stripIndents } from '~/utils/stripIndent';
-import type { ProviderInfo } from '~/types/model';
+import { type ActionFunctionArgs } from '@remix-run/node';
+import axios from 'axios';
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+function createStream(response: { data: AsyncIterable<Uint8Array> }) {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
 
-export async function action(args: ActionFunctionArgs) {
-  return enhancerAction(args);
+  const stream = new ReadableStream({
+    async start(controller) {
+      for await (const chunk of response.data) {
+        try {
+          const line = decoder.decode(chunk);
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              const text = data.response || '';
+              controller.enqueue(encoder.encode(text));
+            } catch (e) {
+              console.error('Error parsing JSON:', e);
+            }
+          }
+        } catch (error) {
+          console.error('Error processing chunk:', error);
+        }
+      }
+      controller.close();
+    },
+  });
+
+  return new Response(stream);
 }
 
-async function enhancerAction({ context, request }: ActionFunctionArgs) {
-  const { message, model, provider, apiKeys } = await request.json<{
-    message: string;
-    model: string;
-    provider: ProviderInfo;
-    apiKeys?: Record<string, string>;
-  }>();
-
-  const { name: providerName } = provider;
-
-  // validate 'model' and 'provider' fields
-  if (!model || typeof model !== 'string') {
-    throw new Response('Invalid or missing model', {
-      status: 400,
-      statusText: 'Bad Request',
-    });
-  }
-
-  if (!providerName || typeof providerName !== 'string') {
-    throw new Response('Invalid or missing provider', {
-      status: 400,
-      statusText: 'Bad Request',
-    });
+export async function action({ request }: ActionFunctionArgs) {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
   }
 
   try {
-    const result = await streamText(
-      [
-        {
-          role: 'user',
-          content:
-            `[Model: ${model}]\n\n[Provider: ${providerName}]\n\n` +
-            stripIndents`
-          I want you to improve the user prompt that is wrapped in \`<original_prompt>\` tags.
+    const formData = await request.formData();
+    const messages = formData.get('messages');
 
-          IMPORTANT: Only respond with the improved prompt and nothing else!
-
-          <original_prompt>
-            ${message}
-          </original_prompt>
-        `,
-        },
-      ],
-      context.cloudflare.env,
-      undefined,
-      apiKeys,
-    );
-
-    const transformStream = new TransformStream({
-      transform(chunk, controller) {
-        const text = decoder.decode(chunk);
-        const lines = text.split('\n').filter((line) => line.trim() !== '');
-
-        for (const line of lines) {
-          try {
-            const parsed = parseStreamPart(line);
-
-            if (parsed.type === 'text') {
-              controller.enqueue(encoder.encode(parsed.value));
-            }
-          } catch (e) {
-            // skip invalid JSON lines
-            console.warn('Failed to parse stream part:', line, e);
-          }
-        }
-      },
-    });
-
-    const transformedStream = result.toAIStream().pipeThrough(transformStream);
-
-    return new StreamingTextResponse(transformedStream);
-  } catch (error: unknown) {
-    console.log(error);
-
-    if (error instanceof Error && error.message?.includes('API key')) {
-      throw new Response('Invalid or missing API key', {
-        status: 401,
-        statusText: 'Unauthorized',
-      });
+    if (!messages) {
+      return new Response(JSON.stringify({ error: 'No messages provided' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
-    throw new Response(null, {
-      status: 500,
-      statusText: 'Internal Server Error',
+    const parsedMessages = JSON.parse(messages.toString());
+    const response = await axios.post('http://localhost:11434/api/generate', {
+      model: 'llama2',
+      messages: parsedMessages,
+      stream: true
+    }, {
+      responseType: 'stream'
     });
+
+    return createStream(response);
+  } catch (error) {
+    console.error('Error:', error);
+    return new Response(JSON.stringify({ error: 'Error processing request' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }

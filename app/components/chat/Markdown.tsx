@@ -1,74 +1,70 @@
-import { memo, useMemo } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
-import type { BundledLanguage } from 'shiki';
-import { createScopedLogger } from '~/utils/logger';
-import { rehypePlugins, remarkPlugins, allowedHTMLElements } from '~/utils/markdown';
+import React, { memo } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { Artifact } from './Artifact';
-import { CodeBlock } from './CodeBlock';
-
-import styles from './Markdown.module.scss';
-
-const logger = createScopedLogger('MarkdownComponent');
+import { cn } from '~/lib/utils';
+import type { Components } from 'react-markdown';
 
 interface MarkdownProps {
-  children: string;
+  content?: string;
+  children?: string;
+  className?: string;
   html?: boolean;
   limitedMarkdown?: boolean;
 }
 
-export const Markdown = memo(({ children, html = false, limitedMarkdown = false }: MarkdownProps) => {
-  logger.trace('Render');
+export const Markdown = memo(function Markdown({ 
+  content,
+  children,
+  className,
+  html = false,
+  limitedMarkdown = false 
+}: MarkdownProps) {
+  const components: Partial<Components> = {
+    pre({ className, children, ...props }) {
+      if (limitedMarkdown) return null;
+      return (
+        <pre className={cn('relative', className)} {...props}>
+          {children}
+        </pre>
+      );
+    },
+    code(props) {
+      const { className, children } = props;
+      const isInline = !className?.includes('language-');
 
-  const components = useMemo(() => {
-    return {
-      div: ({ className, children, node, ...props }) => {
-        if (className?.includes('__boltArtifact__')) {
-          const messageId = node?.properties.dataMessageId as string;
+      if (isInline || limitedMarkdown) {
+        return <code className={className}>{children}</code>;
+      }
 
-          if (!messageId) {
-            logger.error(`Invalid message id ${messageId}`);
-          }
+      const textContent = String(children || '').replace(/\n$/, '');
+      const match = /language-(\w+)/.exec(className || '');
+      const lang = match ? match[1] : undefined;
 
-          return <Artifact messageId={messageId} />;
-        }
+      if (lang === 'artifact') {
+        return <Artifact artifact={{ type: 'file', content: textContent }} />;
+      }
 
-        return (
-          <div className={className} {...props}>
-            {children}
-          </div>
-        );
-      },
-      pre: (props) => {
-        const { children, node, ...rest } = props;
+      return (
+        <code className={cn('block p-4 bg-bolt-elements-background-depth-2 rounded-md', className)}>
+          {children}
+        </code>
+      );
+    }
+  };
 
-        const [firstChild] = node?.children ?? [];
+  const markdownContent = content || children;
 
-        if (
-          firstChild &&
-          firstChild.type === 'element' &&
-          firstChild.tagName === 'code' &&
-          firstChild.children[0].type === 'text'
-        ) {
-          const { className, ...rest } = firstChild.properties;
-          const [, language = 'plaintext'] = /language-(\w+)/.exec(String(className) || '') ?? [];
-
-          return <CodeBlock code={firstChild.children[0].value} language={language as BundledLanguage} {...rest} />;
-        }
-
-        return <pre {...rest}>{children}</pre>;
-      },
-    } satisfies Components;
-  }, []);
+  if (!markdownContent) {
+    return null;
+  }
 
   return (
     <ReactMarkdown
-      allowedElements={allowedHTMLElements}
-      className={styles.MarkdownContent}
+      className={cn('prose dark:prose-invert max-w-none', className)}
       components={components}
-      remarkPlugins={remarkPlugins(limitedMarkdown)}
-      rehypePlugins={rehypePlugins(html)}
+      skipHtml={!html}
     >
-      {children}
+      {markdownContent}
     </ReactMarkdown>
   );
 });

@@ -52,7 +52,7 @@ FROM base AS bolt-ai-development
 
 # Define the same environment variables for development
 ARG GROQ_API_KEY
-ARG HuggingFace 
+ARG HuggingFace
 ARG OPENAI_API_KEY
 ARG ANTHROPIC_API_KEY
 ARG OPEN_ROUTER_API_KEY
@@ -72,4 +72,4 @@ ENV GROQ_API_KEY=${GROQ_API_KEY} \
     DEFAULT_NUM_CTX=${DEFAULT_NUM_CTX}
 
 RUN mkdir -p ${WORKDIR}/run
-CMD pnpm run dev --host
+CMD pnpm run dev --host 0.0.0.0

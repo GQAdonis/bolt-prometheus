@@ -1,6 +1,15 @@
-import { useStore } from '@nanostores/react';
-import { description } from './useChatHistory';
+import React from 'react';
+import { description } from './index';
+import type { ChatHistoryItem } from './index';
 
-export function ChatDescription() {
-  return useStore(description);
+interface ChatDescriptionProps {
+  chat: ChatHistoryItem;
+}
+
+export function ChatDescription({ chat }: ChatDescriptionProps) {
+  return (
+    <div className="text-sm text-bolt-elements-textSecondary">
+      {description.get(chat)}
+    </div>
+  );
 }

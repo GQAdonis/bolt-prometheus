@@ -1,17 +1,22 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck – TODO: Provider proper types
 
-import { type ActionFunctionArgs } from '@remix-run/cloudflare';
+import { type ActionFunctionArgs } from '@remix-run/node';
 import { MAX_RESPONSE_SEGMENTS, MAX_TOKENS } from '~/lib/.server/llm/constants';
 import { CONTINUE_PROMPT } from '~/lib/.server/llm/prompts';
 import { streamText, type Messages, type StreamingOptions } from '~/lib/.server/llm/stream-text';
 import SwitchableStream from '~/lib/.server/llm/switchable-stream';
+import { env } from '~/lib/env.server';
 
 export async function action(args: ActionFunctionArgs) {
   return chatAction(args);
 }
 
 function parseCookies(cookieHeader) {
+  if (!cookieHeader) {
+    return {};
+  }
+
   const cookies = {};
 
   // Split the cookie string by semicolons and spaces
@@ -31,15 +36,23 @@ function parseCookies(cookieHeader) {
   return cookies;
 }
 
-async function chatAction({ context, request }: ActionFunctionArgs) {
-  const { messages } = await request.json<{
+async function chatAction({ request }: ActionFunctionArgs) {
+  const { messages, provider, model } = await request.json<{
     messages: Messages;
+    provider: string;
+    model: string;
   }>();
 
   const cookieHeader = request.headers.get('Cookie');
+  const cookies = parseCookies(cookieHeader);
+  const apiKeys = JSON.parse(cookies.apiKeys || '{}');
 
-  // Parse the cookie's value (returns an object or null if no cookie exists)
-  const apiKeys = JSON.parse(parseCookies(cookieHeader).apiKeys || '{}');
+  if (!apiKeys[provider]) {
+    throw new Response('API key required for selected provider', {
+      status: 401,
+      statusText: 'Unauthorized',
+    });
+  }
 
   const stream = new SwitchableStream();
 
@@ -47,6 +60,8 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
     const options: StreamingOptions = {
       toolChoice: 'none',
       apiKeys,
+      model,
+      provider,
       onFinish: async ({ text: content, finishReason }) => {
         if (finishReason !== 'length') {
           return stream.close();
@@ -63,24 +78,24 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
         messages.push({ role: 'assistant', content });
         messages.push({ role: 'user', content: CONTINUE_PROMPT });
 
-        const result = await streamText(messages, context.cloudflare.env, options);
+        const result = await streamText(messages, env, options);
 
         return stream.switchSource(result.toAIStream());
       },
     };
 
-    const result = await streamText(messages, context.cloudflare.env, options, apiKeys);
+    const result = await streamText(messages, env, options);
 
     stream.switchSource(result.toAIStream());
 
     return new Response(stream.readable, {
       status: 200,
       headers: {
-        contentType: 'text/plain; charset=utf-8',
+        'Content-Type': 'text/plain; charset=utf-8',
       },
     });
   } catch (error) {
-    console.log(error);
+    console.error('Chat error:', error);
 
     if (error.message?.includes('API key')) {
       throw new Response('Invalid or missing API key', {

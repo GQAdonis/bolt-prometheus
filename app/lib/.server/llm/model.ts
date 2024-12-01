@@ -1,162 +1,107 @@
-/*
- * @ts-nocheck
- * Preventing TS checks with files presented in the video for a better presentation.
- */
-import { getAPIKey, getBaseURL } from '~/lib/.server/llm/api-key';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { ollama } from 'ollama-ai-provider';
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import { createMistral } from '@ai-sdk/mistral';
-import { createCohere } from '@ai-sdk/cohere';
-import type { LanguageModelV1 } from 'ai';
+import type { Provider } from '~/lib/types';
+import type { Message } from 'ai';
 
-export const DEFAULT_NUM_CTX = process.env.DEFAULT_NUM_CTX ? parseInt(process.env.DEFAULT_NUM_CTX, 10) : 32768;
-
-type OptionalApiKey = string | undefined;
-
-export function getAnthropicModel(apiKey: OptionalApiKey, model: string) {
-  const anthropic = createAnthropic({
-    apiKey,
-  });
-
-  return anthropic(model);
-}
-export function getOpenAILikeModel(baseURL: string, apiKey: OptionalApiKey, model: string) {
-  const openai = createOpenAI({
-    baseURL,
-    apiKey,
-  });
-
-  return openai(model);
+export interface LLMModel {
+  provider: Provider;
+  model: string;
+  apiKey: string;
 }
 
-export function getCohereAIModel(apiKey: OptionalApiKey, model: string) {
-  const cohere = createCohere({
-    apiKey,
-  });
-
-  return cohere(model);
-}
-
-export function getOpenAIModel(apiKey: OptionalApiKey, model: string) {
-  const openai = createOpenAI({
-    apiKey,
-  });
-
-  return openai(model);
-}
-
-export function getMistralModel(apiKey: OptionalApiKey, model: string) {
-  const mistral = createMistral({
-    apiKey,
-  });
-
-  return mistral(model);
-}
-
-export function getGoogleModel(apiKey: OptionalApiKey, model: string) {
-  const google = createGoogleGenerativeAI({
-    apiKey,
-  });
-
-  return google(model);
-}
-
-export function getGroqModel(apiKey: OptionalApiKey, model: string) {
-  const openai = createOpenAI({
-    baseURL: 'https://api.groq.com/openai/v1',
-    apiKey,
-  });
-
-  return openai(model);
-}
-
-export function getHuggingFaceModel(apiKey: OptionalApiKey, model: string) {
-  const openai = createOpenAI({
-    baseURL: 'https://api-inference.huggingface.co/v1/',
-    apiKey,
-  });
-
-  return openai(model);
-}
-
-export function getOllamaModel(baseURL: string, model: string) {
-  const ollamaInstance = ollama(model, {
-    numCtx: DEFAULT_NUM_CTX,
-  }) as LanguageModelV1 & { config: any };
-
-  ollamaInstance.config.baseURL = `${baseURL}/api`;
-
-  return ollamaInstance;
-}
-
-export function getDeepseekModel(apiKey: OptionalApiKey, model: string) {
-  const openai = createOpenAI({
-    baseURL: 'https://api.deepseek.com/beta',
-    apiKey,
-  });
-
-  return openai(model);
-}
-
-export function getOpenRouterModel(apiKey: OptionalApiKey, model: string) {
-  const openRouter = createOpenRouter({
-    apiKey,
-  });
-
-  return openRouter.chat(model);
-}
-
-export function getLMStudioModel(baseURL: string, model: string) {
-  const lmstudio = createOpenAI({
-    baseUrl: `${baseURL}/v1`,
-    apiKey: '',
-  });
-
-  return lmstudio(model);
-}
-
-export function getXAIModel(apiKey: OptionalApiKey, model: string) {
-  const openai = createOpenAI({
-    baseURL: 'https://api.x.ai/v1',
-    apiKey,
-  });
-
-  return openai(model);
+interface Env {
+  [key: string]: string;
 }
 
 export function getModel(provider: string, model: string, env: Env, apiKeys?: Record<string, string>) {
-  const apiKey = getAPIKey(env, provider, apiKeys);
-  const baseURL = getBaseURL(env, provider);
+  const apiKey = apiKeys?.[provider] || '';
+  const providerObj = {
+    id: provider,
+    name: provider,
+    staticModels: []
+  };
 
   switch (provider) {
-    case 'Anthropic':
-      return getAnthropicModel(apiKey, model);
-    case 'OpenAI':
-      return getOpenAIModel(apiKey, model);
-    case 'Groq':
-      return getGroqModel(apiKey, model);
-    case 'HuggingFace':
-      return getHuggingFaceModel(apiKey, model);
-    case 'OpenRouter':
-      return getOpenRouterModel(apiKey, model);
-    case 'Google':
-      return getGoogleModel(apiKey, model);
-    case 'OpenAILike':
-      return getOpenAILikeModel(baseURL, apiKey, model);
-    case 'Deepseek':
-      return getDeepseekModel(apiKey, model);
-    case 'Mistral':
-      return getMistralModel(apiKey, model);
-    case 'LMStudio':
-      return getLMStudioModel(baseURL, model);
-    case 'xAI':
-      return getXAIModel(apiKey, model);
-    case 'Cohere':
-      return getCohereAIModel(apiKey, model);
+    case 'groq': {
+      return {
+        provider: providerObj,
+        model,
+        apiKey,
+        async doStream({ messages }: { messages: Message[] }) {
+          const response = await fetch('https://api.groq.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model,
+              messages: messages.map(m => ({
+                role: m.role,
+                content: m.content
+              })),
+              stream: true,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+
+          if (!reader) {
+            throw new Error('No reader available');
+          }
+
+          return new ReadableStream({
+            async start(controller) {
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+
+                  const chunk = decoder.decode(value);
+                  const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+                  for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                      const data = line.slice(6);
+                      if (data === '[DONE]') continue;
+
+                      try {
+                        const parsed = JSON.parse(data);
+                        const content = parsed.choices[0]?.delta?.content;
+                        if (content) {
+                          controller.enqueue(content);
+                        }
+                      } catch (e) {
+                        console.error('Error parsing JSON:', e);
+                      }
+                    }
+                  }
+                }
+                controller.close();
+              } catch (e) {
+                controller.error(e);
+              }
+            },
+          });
+        }
+      };
+    }
     default:
-      return getOllamaModel(baseURL, model);
+      return {
+        provider: providerObj,
+        model,
+        apiKey,
+        async doStream() {
+          return new ReadableStream({
+            start(controller) {
+              controller.enqueue('Streaming not implemented for this provider');
+              controller.close();
+            }
+          });
+        }
+      };
   }
 }

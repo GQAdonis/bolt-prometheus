@@ -17,3 +17,8 @@
 .Chat {
   opacity: 1;
 }
+
+.chatTextarea {
+  min-height: 76px;
+  max-height: var(--textarea-max-height, 400px);
+}

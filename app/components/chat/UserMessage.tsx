@@ -1,27 +1,23 @@
-/*
- * @ts-nocheck
- * Preventing TS checks with files presented in the video for a better presentation.
- */
-import { modificationsRegex } from '~/utils/diff';
-import { MODEL_REGEX, PROVIDER_REGEX } from '~/utils/constants';
+import React from 'react';
 import { Markdown } from './Markdown';
 
 interface UserMessageProps {
   content: string;
 }
 
-export function UserMessage({ content }: UserMessageProps) {
-  return (
-    <div className="overflow-hidden pt-[4px]">
-      <Markdown limitedMarkdown>{sanitizeUserMessage(content)}</Markdown>
-    </div>
-  );
+export function sanitizeUserMessage(content: string): string {
+  // Remove any HTML tags for security
+  return content.replace(/<[^>]*>/g, '');
 }
 
-function sanitizeUserMessage(content: string) {
-  return content
-    .replace(modificationsRegex, '')
-    .replace(MODEL_REGEX, 'Using: $1')
-    .replace(PROVIDER_REGEX, ' ($1)\n\n')
-    .trim();
+export function UserMessage({ content }: UserMessageProps) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <div className="w-6 h-6 rounded-full bg-bolt-elements-background-depth-2" />
+        <div className="text-sm font-medium">You</div>
+      </div>
+      <Markdown content={sanitizeUserMessage(content)} limitedMarkdown />
+    </div>
+  );
 }

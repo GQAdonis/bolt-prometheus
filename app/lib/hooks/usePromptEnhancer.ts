@@ -4,6 +4,13 @@ import { createScopedLogger } from '~/utils/logger';
 
 const logger = createScopedLogger('usePromptEnhancement');
 
+interface EnhancerRequestBody {
+  message: string;
+  model: string;
+  provider: ProviderInfo;
+  apiKeys?: Record<string, string>;
+}
+
 export function usePromptEnhancer() {
   const [enhancingPrompt, setEnhancingPrompt] = useState(false);
   const [promptEnhanced, setPromptEnhanced] = useState(false);
@@ -23,7 +30,7 @@ export function usePromptEnhancer() {
     setEnhancingPrompt(true);
     setPromptEnhanced(false);
 
-    const requestBody: any = {
+    const requestBody: EnhancerRequestBody = {
       message: input,
       model,
       provider,
@@ -51,8 +58,10 @@ export function usePromptEnhancer() {
       try {
         setInput('');
 
-        while (true) {
+        let isDone = false;
+        while (!isDone) {
           const { value, done } = await reader.read();
+          isDone = done;
 
           if (done) {
             break;
@@ -60,7 +69,7 @@ export function usePromptEnhancer() {
 
           _input += decoder.decode(value);
 
-          logger.trace('Set input', _input);
+          logger.debug('Set input', _input);
 
           setInput(_input);
         }
@@ -69,7 +78,7 @@ export function usePromptEnhancer() {
         setInput(originalInput);
       } finally {
         if (_error) {
-          logger.error(_error);
+          logger.error('Error enhancing prompt', _error);
         }
 
         setEnhancingPrompt(false);

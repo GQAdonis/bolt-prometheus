@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from 'react';
 
 interface LoadingDotsProps {
-  text: string;
+  text?: string;
 }
 
 export const LoadingDots = memo(({ text }: LoadingDotsProps) => {
@@ -18,7 +18,7 @@ export const LoadingDots = memo(({ text }: LoadingDotsProps) => {
   return (
     <div className="flex justify-center items-center h-full">
       <div className="relative">
-        <span>{text}</span>
+        {text && <span>{text}</span>}
         <span className="absolute left-[calc(100%-12px)]">{'.'.repeat(dotCount)}</span>
         <span className="invisible">...</span>
       </div>

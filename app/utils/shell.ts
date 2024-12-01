@@ -24,12 +24,13 @@ export async function newShellProcess(webcontainer: WebContainer, terminal: ITer
     new WritableStream({
       write(data) {
         if (!isInteractive) {
-          const [, osc] = data.match(/\x1b\]654;([^\x07]+)\x07/) || [];
-
-          if (osc === 'interactive') {
+          // Use a more robust method to extract OSC
+          const dataStr = data.toString();
+          const oscMatch = dataStr.includes('\u001b]654;interactive\u0007');
+          
+          if (oscMatch) {
             // wait until we see the interactive OSC
             isInteractive = true;
-
             jshReady.resolve();
           }
         }
@@ -52,7 +53,13 @@ export async function newShellProcess(webcontainer: WebContainer, terminal: ITer
   return process;
 }
 
-export type ExecutionResult = { output: string; exitCode: number } | undefined;
+export type ExecutionResult = { output: string; exitCode: number };
+
+export type ExecutionState = {
+  sessionId: string;
+  active: boolean;
+  executionPrms?: Promise<ExecutionResult>;
+};
 
 export class BoltShell {
   #initialized: (() => void) | undefined;
@@ -60,7 +67,7 @@ export class BoltShell {
   #webcontainer: WebContainer | undefined;
   #terminal: ITerminal | undefined;
   #process: WebContainerProcess | undefined;
-  executionState = atom<{ sessionId: string; active: boolean; executionPrms?: Promise<any> } | undefined>();
+  executionState = atom<ExecutionState | undefined>();
   #outputStream: ReadableStreamDefaultReader<string> | undefined;
   #shellInputStream: WritableStreamDefaultWriter<string> | undefined;
 
@@ -95,7 +102,7 @@ export class BoltShell {
 
   async executeCommand(sessionId: string, command: string): Promise<ExecutionResult> {
     if (!this.process || !this.terminal) {
-      return undefined;
+      return { output: '', exitCode: 0 };
     }
 
     const state = this.executionState.get();
@@ -104,7 +111,7 @@ export class BoltShell {
      * interrupt the current execution
      *  this.#shellInputStream?.write('\x03');
      */
-    this.terminal.input('\x03');
+    this.terminal.input('\u0003');
 
     if (state && state.executionPrms) {
       await state.executionPrms;
@@ -118,7 +125,7 @@ export class BoltShell {
     this.executionState.set({ sessionId, active: true, executionPrms: executionPromise });
 
     const resp = await executionPromise;
-    this.executionState.set({ sessionId, active: false });
+    this.executionState.set({ sessionId, active: false, executionPrms: undefined });
 
     return resp;
   }
@@ -146,12 +153,13 @@ export class BoltShell {
       new WritableStream({
         write(data) {
           if (!isInteractive) {
-            const [, osc] = data.match(/\x1b\]654;([^\x07]+)\x07/) || [];
-
-            if (osc === 'interactive') {
+            // Use a more robust method to extract OSC
+            const dataStr = data.toString();
+            const oscMatch = dataStr.includes('\u001b]654;interactive\u0007');
+            
+            if (oscMatch) {
               // wait until we see the interactive OSC
               isInteractive = true;
-
               jshReady.resolve();
             }
           }
@@ -179,36 +187,53 @@ export class BoltShell {
     return { output, exitCode };
   }
 
-  async waitTillOscCode(waitCode: string) {
+  async waitTillOscCode(waitCode: string, timeout = 30000): Promise<ExecutionResult> {
     let fullOutput = '';
     let exitCode: number = 0;
 
     if (!this.#outputStream) {
-      return { output: fullOutput, exitCode };
+      return { output: fullOutput, exitCode: 0 };
     }
 
     const tappedStream = this.#outputStream;
+    const startTime = Date.now();
+    let running = true;
 
-    while (true) {
-      const { value, done } = await tappedStream.read();
+    try {
+      while (running) {
+        if (Date.now() - startTime > timeout) {
+          console.warn(`Timeout waiting for OSC code: ${waitCode}`);
+          running = false;
+          break;
+        }
 
-      if (done) {
-        break;
+        const { value, done } = await tappedStream.read();
+
+        if (done) {
+          running = false;
+          break;
+        }
+
+        const text = value || '';
+        fullOutput += text;
+
+        // Create RegExp from string to avoid control character warnings
+        const pattern = String.raw`\u001b]654;([^=\u0007]+)(?:=(-?\d+):(\d+))?\u0007`;
+        const oscPattern = new RegExp(pattern, 'g');
+        const matches = Array.from(text.matchAll(oscPattern));
+
+        for (const match of matches) {
+          const [, osc, , code] = match;
+          if (osc === 'exit' && code !== undefined) {
+            exitCode = parseInt(code, 10);
+          }
+          if (osc === waitCode) {
+            return { output: fullOutput, exitCode };
+          }
+        }
       }
-
-      const text = value || '';
-      fullOutput += text;
-
-      // Check if command completion signal with exit code
-      const [, osc, , , code] = text.match(/\x1b\]654;([^\x07=]+)=?((-?\d+):(\d+))?\x07/) || [];
-
-      if (osc === 'exit') {
-        exitCode = parseInt(code, 10);
-      }
-
-      if (osc === waitCode) {
-        break;
-      }
+    } catch (error) {
+      console.error('Error in waitTillOscCode:', error);
     }
 
     return { output: fullOutput, exitCode };

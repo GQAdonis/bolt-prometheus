@@ -1,83 +1,60 @@
-import { memo, useEffect, useRef } from 'react';
-import { IconButton } from '~/components/ui/IconButton';
-import type { PreviewInfo } from '~/lib/stores/previews';
+import { useState } from 'react';
+import { cn } from '~/lib/utils';
 
-interface PortDropdownProps {
-  activePreviewIndex: number;
-  setActivePreviewIndex: (index: number) => void;
-  isDropdownOpen: boolean;
-  setIsDropdownOpen: (value: boolean) => void;
-  setHasSelectedPreview: (value: boolean) => void;
-  previews: PreviewInfo[];
+export interface PreviewInfo {
+  port: number;
+  url: string;
+  baseUrl: string;
+  ready?: boolean;
 }
 
-export const PortDropdown = memo(
-  ({
-    activePreviewIndex,
-    setActivePreviewIndex,
-    isDropdownOpen,
-    setIsDropdownOpen,
-    setHasSelectedPreview,
-    previews,
-  }: PortDropdownProps) => {
-    const dropdownRef = useRef<HTMLDivElement>(null);
+interface PortDropdownProps {
+  previews: PreviewInfo[];
+  activePreviewIndex: number;
+  onPreviewSelect: (index: number) => void;
+  className?: string;
+}
 
-    // sort previews, preserving original index
-    const sortedPreviews = previews
-      .map((previewInfo, index) => ({ ...previewInfo, index }))
-      .sort((a, b) => a.port - b.port);
+export function PortDropdown({ 
+  previews, 
+  activePreviewIndex,
+  onPreviewSelect,
+  className 
+}: PortDropdownProps) {
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-    // close dropdown if user clicks outside
-    useEffect(() => {
-      const handleClickOutside = (event: MouseEvent) => {
-        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-          setIsDropdownOpen(false);
-        }
-      };
+  const handlePreviewSelect = (index: number) => {
+    onPreviewSelect(index);
+    setIsDropdownOpen(false);
+  };
 
-      if (isDropdownOpen) {
-        window.addEventListener('mousedown', handleClickOutside);
-      } else {
-        window.removeEventListener('mousedown', handleClickOutside);
-      }
-
-      return () => {
-        window.removeEventListener('mousedown', handleClickOutside);
-      };
-    }, [isDropdownOpen]);
-
-    return (
-      <div className="relative z-port-dropdown" ref={dropdownRef}>
-        <IconButton icon="i-ph:plug" onClick={() => setIsDropdownOpen(!isDropdownOpen)} />
-        {isDropdownOpen && (
-          <div className="absolute right-0 mt-2 bg-bolt-elements-background-depth-2 border border-bolt-elements-borderColor rounded shadow-sm min-w-[140px] dropdown-animation">
-            <div className="px-4 py-2 border-b border-bolt-elements-borderColor text-sm font-semibold text-bolt-elements-textPrimary">
-              Ports
-            </div>
-            {sortedPreviews.map((preview) => (
-              <div
-                key={preview.port}
-                className="flex items-center px-4 py-2 cursor-pointer hover:bg-bolt-elements-item-backgroundActive"
-                onClick={() => {
-                  setActivePreviewIndex(preview.index);
-                  setIsDropdownOpen(false);
-                  setHasSelectedPreview(true);
-                }}
-              >
-                <span
-                  className={
-                    activePreviewIndex === preview.index
-                      ? 'text-bolt-elements-item-contentAccent'
-                      : 'text-bolt-elements-item-contentDefault group-hover:text-bolt-elements-item-contentActive'
-                  }
-                >
-                  {preview.port}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  },
-);
+  return (
+    <div className={cn('relative', className)}>
+      <button
+        type="button"
+        className="flex items-center gap-1 px-2 py-1 text-sm rounded-md hover:bg-bolt-elements-background-depth-2"
+        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+      >
+        Port {previews[activePreviewIndex]?.port}
+        <span className="text-bolt-elements-textSecondary">▼</span>
+      </button>
+      {isDropdownOpen && (
+        <div className="absolute top-full left-0 z-10 mt-1 w-48 rounded-md shadow-lg bg-bolt-elements-background-depth-1 border border-bolt-elements-border">
+          {previews.map((preview, index) => (
+            <button
+              key={preview.port}
+              type="button"
+              className={cn(
+                'w-full px-4 py-2 text-left text-sm hover:bg-bolt-elements-background-depth-2',
+                index === activePreviewIndex && 'bg-bolt-elements-background-depth-2'
+              )}
+              onClick={() => handlePreviewSelect(index)}
+            >
+              Port {preview.port}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

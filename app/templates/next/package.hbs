@@ -1,0 +1,33 @@
+{
+  "name": "{{name}}",
+  "version": "{{version}}",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "{{#if testing}}{{testing}}{{else}}vitest{{/if}}"
+  },
+  "dependencies": {
+    "next": "^{{nextVersion}}",
+    "react": "^{{reactVersion}}",
+    "react-dom": "^{{reactVersion}}",
+    "zustand": "^{{zustandVersion}}",
+    "zod": "^{{zodVersion}}",
+    "@hookform/resolvers": "^{{hookformVersion}}",
+    "react-hook-form": "^{{hookformVersion}}",
+    "class-variance-authority": "^{{cvaVersion}}",
+    "clsx": "^{{clsxVersion}}",
+    "tailwind-merge": "^{{twMergeVersion}}"
+  },
+  "devDependencies": {
+    "typescript": "^{{typescriptVersion}}",
+    "tailwindcss": "^{{tailwindVersion}}",
+    "postcss": "^{{postcssVersion}}",
+    "autoprefixer": "^{{autoprefixerVersion}}",
+    "{{#if testing}}{{testing}}{{else}}vitest{{/if}}": "^{{testingVersion}}",
+    "@types/react": "^{{reactVersion}}",
+    "@types/react-dom": "^{{reactVersion}}",
+    "@types/node": "^{{nodeTypesVersion}}"
+  }
+}
